@@ -50,6 +50,17 @@ client channels          platform                    integrator (your machine)
 ## Design
 
 - [Remote access platform design](docs/2026-10-06-remote-access-platform-design.md) — Chinese; the full design, including the alternatives that were rejected and why.
+- [Tech stack and project structure design](docs/2026-10-06-waygate-tech-stack-and-structure-design.md) — Chinese; toolchain, package layout, the R1–R6 invariants, gates and discipline.
+- [AGENTS.md](AGENTS.md) — Chinese; the working rules. Every rule is either enforced by a gate in `scripts/` or marked as a review item.
+
+## Status
+
+The scaffold is in place: pnpm workspace, strict TypeScript, vitest, oxlint/oxfmt, lefthook, and
+seven milestone-1 packages (`contract`, `frame`, `crypto`, `contract-assert`, `sdk`,
+`test-support`, `mock-endpoint`). `pnpm gate` passes.
+
+Nothing is implemented yet beyond that skeleton — the contract's full command and event set,
+version negotiation, block limits, the relay and the channels are all still to come.
 
 ## Risks to validate before implementation
 

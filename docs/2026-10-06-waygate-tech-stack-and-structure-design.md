@@ -54,7 +54,7 @@
 
 | 工具 | 版本 | 说明 |
 |---|---|---|
-| `typescript` | `6.0.3`，附 §11 的一条升级验证 | 见 §11 风险一 |
+| `typescript` | `6.0.3` | 刻意不升 7.x。TS 7 的包根**只导出 `version`**，经典编译器 API 被移到了显式标记 `unstable/*` 的子路径；本项目的三个门禁脚本都依赖该 API 做 AST 分析。证据见 §11 风险一 |
 | `vitest` / `@vitest/coverage-v8` | `5.0.3` | 两者主版本必须一致 |
 | `oxlint` | `1.87.0` | |
 | `oxfmt` | `0.72.0` | |
@@ -82,7 +82,15 @@
 
 其中 `exactOptionalPropertyTypes` 与平台设计 §5.7 的"字段缺失要**省略键**，不要写 `undefined`"是同一件事的两个面 —— 前者是后者的编译器支撑。这不是巧合式的对齐，是刻意选择的：把一条协议层的纪律交给编译器守，比交给 review 可靠。
 
-**不抄 —— `tsconfig.base.json` 里那份几百行的 `paths` 大表**。那是项目引用规模上去之后的产物（既有仓库用它同时充当源码解析门面）。Waygate 用每包 `tsconfig.json` + `tsc -b` 项目引用即可，`paths` 只保留少量确有必要的工作区别名，绝不作为跨包解析的主要机制。
+**不抄 —— 那份几百行的 `paths` 大表**。既有仓库用它同时充当源码解析门面，因此要为每个包、每个子入口各维护一条映射，几百行且与各包的 `exports` 重复。
+
+Waygate 用**一行通配**达到同样目的：
+
+```json
+"paths": { "@waygate/*": ["./packages/*/src/index.ts"] }
+```
+
+扁平布局加"每包单一入口 `src/index.ts`"让通配就够了。区别不在于用不用 `paths`，而在于**要不要维护一张需要人工同步的表** —— 后者才是那套做法的真正成本。
 
 **有意偏离一处 —— `verbatimModuleSyntax: true`**（既有生态设为 `false`）。Waygate 有多个包要发布给外部接入方与浏览器使用，强制 `import type` 让"类型依赖"与"运行时依赖"在编译期就分开：一个只在类型位置用到的 import 不会变成运行时 import，也就不会把一个本可零依赖的包拖进依赖图。既有生态的依赖图里含 `vendor/` 下的第三方代码，需要为互操作留余地；Waygate 没有 `vendor/`，不需要让路。
 
@@ -147,31 +155,36 @@ R2 与 R3 值得单独说一句：它们是**把安全承诺变成编译期事�
 
 ## 5. 构建与类型策略
 
-### 5.1 只有一条构建路径
+### 5.1 门禁跑源码，产物只用于发布
 
-`tsc -b` 按项目引用编译全部包，产出 `lib/`（JS + `.d.ts` + sourcemap）。发布包直接以这份产物发布，不额外打包。
+**这一节在骨架落地时被修正过。** 初稿写的是"用 `tsc` 产出而不引打包器，就不会有源码平面与产物平面这条纪律"。**那是错的。** 在 TypeScript 工作区里，只要包的 `exports` 指向编译产物，测试与覆盖率就会跑在**编译后的 JS** 上而不是你写的代码上 —— 于是契约层那条"逐文件 100% 覆盖率"衡量的就不再是源码。这条纪律躲不掉，只能明确划出来。
 
-**库包不使用 tsdown。** 理由：`tsc` 已经产出合法 ESM 与声明文件；再引一层打包器就会引入"源码平面 vs 产物平面"这条纪律（哪些门禁跑 `src`、哪些跑 `lib`），而这条纪律正是既有仓库需要专门文档去守的东西（其 `AGENTS.md` 里"Source plane vs artifact plane, never mixed"）。Waygate 的包不需要打包就能发布，所以不要这一层。
+现在的安排：
 
-`tsdown` 只用在真正需要打包的地方：
+| 平面 | 用途 | 谁在读 |
+|---|---|---|
+| **源码平面** | 类型检查、测试、覆盖率、门禁脚本 | `pnpm typecheck`、`vitest`、`scripts/*` |
+| **发布平面** | 发布产物（ESM + `.d.ts`） | 外部接入方 |
 
-- `apps/relay` —— 产出一个可执行的 bin；
-- `apps/web` —— Vite 负责，不需要 tsdown。
+**纪律只有一条：门禁不得读产物。** 具体落实：
+
+- `tsconfig.json` 是**单一程序**：`noEmit: true`，`include` 覆盖 `packages/*/src`、`scripts` 与工具配置，跨包解析靠一行通配 `paths`（§3.3）。没有 `composite`，没有项目引用 —— 这个规模不需要它们，它们还会把"类型从产物解析、运行时从源码解析"这种不一致引进来。
+- `vitest.config.ts` 用同一条通配把 `@waygate/*` 解析到 `packages/*/src/index.ts`。因此 **`pnpm test` 不需要先构建**，覆盖率报告里的行号就是源码行号。
+- **骨架阶段不产出发布产物。** 此刻没有任何人消费它 —— 第一个消费方是里程碑 4 的接入方。到那时再引入产物管线，并在这条纪律下补一条门禁：`packages/*/src` 不得 import 任何产物路径。
+
+`tsdown` 因此在骨架里**没有被使用**。它属于"应用层打包"（`apps/relay` 的 bin）与将来的产物管线，不是库包的必需品。
 
 ### 5.2 模块解析用 `nodenext`，不用 `bundler`
 
 `module: nodenext` + `moduleResolution: nodenext`。理由：Waygate 的包要发布到 npm、被 Node 直接加载（接入方在自己的服务里 import），也从 `exports` 字段被 Vite 解析。`bundler` 解析是为"源码永远经过打包器"的项目设计的，用它来发布 Node 直接消费的包，等于把风险推给下游。
 
-配合 `allowImportingTsExtensions` + `rewriteRelativeImportExtensions`：源码里本地相对导入写 `.ts`，编译时改写为 `.js`。这与既有生态的写法一致，但它在这里的作用是让**源码路径即发布路径**，不需要另一套 import 映射。
+配合 `allowImportingTsExtensions` + `rewriteRelativeImportExtensions`：源码里本地相对导入写 `.ts`。骨架阶段是 `noEmit`，改写尚未实际发生；保留这两个开关是为了将来产出产物时不需要动任何一行 import。
 
 ### 5.3 编译器面（compiler face）
 
-只保留两面：
+骨架只有**一个**程序：根 `tsconfig.json`，覆盖 `packages/*/src`、`scripts` 与工具配置，`noEmit`。等 `apps/web` 到来时才加第二面（`tsconfig.web.json`，带浏览器 lib）—— 那也是 `lib` 里唯一需要 `dom` 的地方，否则 DOM 类型会渗进每个包，R6 就只剩门禁在守。
 
-- **平台面**（`tsconfig.json` 根解决方案，覆盖 `packages/*` 与 `apps/relay`）；
-- **浏览器面**（`apps/web` 自己的 `tsconfig.web.json`）。
-
-每包一个 `tsconfig.json`，`composite: true`，由根解决方案引用。不预先设计"每包多 face"—— 那是 R6 与 §12.5 之外的需求，现在没有。
+刻意不做"每包多 face"：那是既有仓库为 Host/Client 两套运行时准备的东西，Waygate 现在没有这个需求。
 
 ---
 
@@ -181,19 +194,21 @@ Waygate 自己的命令集。**不沿用任何既有仓库的脚本名。**
 
 ```sh
 pnpm install
-pnpm build            # tsc -b 全项目 + 应用打包
-pnpm typecheck        # tsc -b（增量）；类型门禁
+pnpm typecheck        # tsc -p tsconfig.json（noEmit）；类型门禁
 pnpm lint             # oxlint
 pnpm format           # oxfmt --write
 pnpm format:check     # 只检查，不改写
 pnpm test             # 平台核心全套（vitest run）
-pnpm test:web         # Web 渠道全套（独立 config）
+pnpm test:watch       # 开发循环
+pnpm test:web         # Web 渠道全套（独立 config）；里程碑 3 才存在
 pnpm test:coverage    # 平台核心全套 + 覆盖率门槛
 pnpm test:mutation    # 变异验证
 pnpm gate             # 收口：typecheck + lint + format:check + check:boundaries + check:versions + test:coverage
 ```
 
-`pnpm gate` 是唯一的本地收口命令，CI 跑同一个。开发循环里不跑它 —— 按 §7.2 只跑改动涉及的测试文件（`pnpm test <文件路径>`）。既有生态那份"推送前跑哪些检查"的清单在这里被收敛成一条命令，因为我们没有平台矩阵、原生插件与 Python 运行时需要分情况。
+**没有 `pnpm build`。** 骨架阶段没有任何人消费构建产物，一个"能跑但没有产出物的地方"的命令只会误导人（§5.1）。产物管线随里程碑 4 的第一个接入方一起引入。
+
+`pnpm gate` 是唯一的本地收口命令，CI 跑同一个。开发循环里不跑它 —— 按 §7.2 只跑改动涉及的测试文件（`pnpm exec vitest run <文件路径>`）。
 
 `check:boundaries` 与 `check:versions` 只通过 `pnpm gate` 与 CI 执行，不作为独立日常命令暴露。
 
@@ -361,15 +376,24 @@ pnpm gate             # 收口：typecheck + lint + format:check + check:boundar
 
 ---
 
-## 11. 待验证项
+## 11. 验证结果与遗留待验证项
+
+### 11.1 骨架阶段已经验证掉的
+
+| # | 事项 | 结果 | 证据 |
+|---|---|---|---|
+| 1 | **TypeScript 7 能否替代 6.0.3** | **不能，停在 6.0.3** | 装 `typescript@7.0.2` 后 `pnpm typecheck` 立刻报 25 处 `TS2339`：`ts.createSourceFile`、`ts.forEachChild`、`ts.isExportDeclaration` 等全部不存在。查其 `package.json` 的 `exports`：包根 `.` 指向 `./lib/version.cjs`（只有版本号），经典编译器 API 只存在于 `./unstable/ast`、`./unstable/sync` 等显式子路径。三个门禁脚本都靠该 API 做 AST 分析，而替代 API 自己标着 `unstable`。**重评触发条件**：该 API 去掉 `unstable/` 前缀 |
+| 2 | **Node 22 的 WebCrypto 是否支持 X25519 + AES-GCM** | **支持，无需纯 JS 回退** | 实测 `generateKey({name:'X25519'})` + `deriveBits` 两端共享秘密一致；HKDF → AES-GCM 加解密往返成功。这直接消掉了平台设计 §11 风险一在 **Node 侧**的不确定性（小程序侧仍然存在） |
+| 3 | **三个门禁是否真的会红** | **会** | 逐个注入违规实测：`R5`／`R6`／`TYPES-ONLY` 各报一条并 exit 1；覆盖率门槛在放入一个未覆盖文件后 exit 1、移除后 exit 0；`SDK-SURFACE` 在门面去掉一个 `export *` 后逐条列出漏掉的 12 个导出；变异验证 6 个变异体全部被打红且源码逐字节还原 |
+| 4 | **`exactOptionalPropertyTypes` 能否真的守住"省略键"** | **能** | `pair.ack` 的 `agentPublicKey` 在缺省时**不产生该键**（`Object.hasOwn` 为假），并由用例锁定 |
+
+### 11.2 遗留待验证项
 
 | # | 待验证 | 影响 | 验证方式 |
 |---|---|---|---|
-| 1 | **TypeScript 7.0.2 是否支持本项目依赖的 `tsc -b` 项目引用、`rewriteRelativeImportExtensions` 与声明产出** | 决定停在 6.0.3 还是升到 7.x。TS 7 是原生重写线，本项目整套类型纪律都压在 `tsc -b` 上，不能只看"latest 是 7"就升 | 骨架阶段实测：用 7.0.2 跑一遍 `tsc -b` 与门禁；通过则升级并把本文基线改为 7.x，不通过则记录缺口后停在 6.0.3 |
-| 2 | `ws` 在高频 `block.delta` 下的缓冲行为是否足以支撑平台设计 §6.5 的背压策略 | 决定中转是否需要 `bufferedAmount` 之外的自建队列 | 骨架之后用一个高频发送、慢速消费的假客户端测量 |
-| 3 | Vitest 5 的 workspace／projects 能力能否干净表达"两套体系" | 决定是两个独立 config 文件，还是一个 config 两个 project | 里程碑 3 建立 `apps/web` 时确认；两者都可行则选更不容易被误合并的那个 |
-
-风险 2、3 都不阻塞骨架。风险 1 在骨架阶段就有答案，因为它就是骨架要做的事。
+| 1 | `ws` 在高频 `block.delta` 下的缓冲行为是否足以支撑平台设计 §6.5 的背压策略 | 决定中转是否需要 `bufferedAmount` 之外的自建队列 | 骨架之后用一个高频发送、慢速消费的假客户端测量 |
+| 2 | Vitest 5 的 workspace／projects 能力能否干净表达"两套体系" | 决定是两个独立 config 文件，还是一个 config 两个 project | 里程碑 3 建立 `apps/web` 时确认；两者都可行则选更不容易被误合并的那个 |
+| 3 | 发布产物管线（里程碑 4 引入） | 决定 `packages/*` 的 `exports` 与发布配置形态 | 引入时补一条门禁：`packages/*/src` 不得 import 产物路径（§5.1） |
 
 ---
 
@@ -398,6 +422,10 @@ pnpm gate             # 收口：typecheck + lint + format:check + check:boundar
   - §4.3 渠道无关性不变量 → 本文 R4 + §9.4。
   - §9.3 审计分工 → 本文 §9.3。
 - 项目归属检查：§3.3 逐条说明抄什么、不抄什么、为什么；§12 明确不沿用既有仓库的脚本名与发布流程；§6 的命令集为本项目自定义。
-- 内部一致性检查：R1–R6 与 §9 的规矩表无冲突；§5.1 的"库包不用 tsdown"与 §2 摘要表一致；§8 的门面包与 §4.2 依赖图中的 `sdk` 位置一致。
+- 内部一致性检查：R1–R6 与 §9 的规矩表无冲突；§8 的门面包与 §4.2 依赖图中的 `sdk` 位置一致。
 - 歧义检查："契约"始终指平台设计的接入契约；"平台核心"始终指 `packages/*` 中非渠道的包；"门禁"始终指可执行脚本，与"评审"明确区分。
 - 诚实边界检查：§9.5 把平台设计的三处"平台做不到"提升为项目规矩，并说明了它保护的是"不要高估平台保障"。
+- **落地后修正记录**（本文在骨架完成后回头修正过，避免留下一份与代码不符的设计）：
+  - §5.1 初稿称"不用打包器就没有源码/产物双平面纪律"，是错的；已按实际情况重写，并把纪律明确为"门禁不得读产物"。连带修正 §3.3（通配 `paths` 是实际机制）、§5.2（骨架 `noEmit`，改写尚未发生）、§5.3（只有一个程序）、§6（骨架没有 `pnpm build`）。
+  - §11 由"待验证"改为"验证结果与遗留待验证项"，风险一以实测证据结案。
+  - §7.1／§7.2 与 §10 的措辞在自检阶段已修正：区分"每文件有测试"与"逐文件执行"，并说明 Web 渠道 config 属于里程碑 3。

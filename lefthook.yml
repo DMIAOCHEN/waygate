@@ -3,7 +3,10 @@ pre-commit:
   parallel: true
   commands:
     format:
-      glob: '*.{ts,tsx,json,jsonc,md,yml,yaml}'
+      # 刻意不含 md：`docs/` 与 `*.md` 不参与自动格式化（prose 的换行是刻意的）。
+      # 另外这里不能用目录扫描 —— 显式传文件会绕过 oxfmt 的 ignorePatterns，
+      # 于是被"忽略"的 markdown 反而会被当成待格式化文件而报错。
+      glob: '*.{ts,tsx,json,jsonc,yml,yaml}'
       run: pnpm exec oxfmt --write {staged_files}
       stage_fixed: true
     newline:
