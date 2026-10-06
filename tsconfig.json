@@ -1,7 +1,7 @@
 {
   // 门禁平面：单一程序，覆盖源码、测试、门禁脚本与工具配置。
   // 刻意不使用 composite / 项目引用 —— 门禁一律读 packages/*/src，
-  // 绝不读任何产物目录（见 docs/2026-10-06-waygate-tech-stack-and-structure-design.md §5）。
+  // 绝不读任何产物目录（见 docs/specs/2026-10-06-waygate-tech-stack-and-structure-design.md §5）。
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true

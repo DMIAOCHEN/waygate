@@ -49,9 +49,13 @@ client channels          platform                    integrator (your machine)
 
 ## Design
 
-- [Remote access platform design](docs/2026-10-06-remote-access-platform-design.md) — Chinese; the full design, including the alternatives that were rejected and why.
-- [Tech stack and project structure design](docs/2026-10-06-waygate-tech-stack-and-structure-design.md) — Chinese; toolchain, package layout, the R1–R6 invariants, gates and discipline.
+- [Remote access platform design](docs/specs/2026-10-06-remote-access-platform-design.md) — Chinese; the full design, including the alternatives that were rejected and why.
+- [Tech stack and project structure design](docs/specs/2026-10-06-waygate-tech-stack-and-structure-design.md) — Chinese; toolchain, package layout, the R1–R6 invariants, gates and discipline.
 - [AGENTS.md](AGENTS.md) — Chinese; the working rules. Every rule is either enforced by a gate in `scripts/` or marked as a review item.
+
+Documents live under `docs/`, classified by nature: `specs/` (design and specs), `plans/`
+(implementation plans), `guides/` (how-to), `decisions/` (why a trade-off was made).
+[AGENTS.md §8](AGENTS.md) owns the naming rules.
 
 ## Status
 
