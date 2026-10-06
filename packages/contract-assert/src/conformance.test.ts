@@ -1,4 +1,4 @@
-import { capabilityOf, knownCapabilities } from '@waygate/contract'
+import { capabilityOf, knownCapabilities, type CapabilitySurface } from '@waygate/contract'
 import { createMockCapabilitySurface } from '@waygate/mock-endpoint'
 import { describe, expect, test } from 'vitest'
 
@@ -8,7 +8,6 @@ import {
   assertContractConformance,
   describeThrown,
   runContractAssertions,
-  type CapabilitySurface,
 } from './conformance.ts'
 
 /** `@waygate/contract` 的参考实现，包装成被测表面。 */

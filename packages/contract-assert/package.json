@@ -7,8 +7,10 @@
   "publishConfig": {
     "access": "public"
   },
+  "dependencies": {
+    "@waygate/contract": "workspace:*"
+  },
   "devDependencies": {
-    "@waygate/contract": "workspace:*",
     "@waygate/mock-endpoint": "workspace:*"
   }
 }

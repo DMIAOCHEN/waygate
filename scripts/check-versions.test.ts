@@ -14,6 +14,7 @@ import {
   runCli,
   type ReportSink,
 } from './check-versions.ts'
+import type { PackageManifest } from './check-boundaries.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
@@ -106,7 +107,7 @@ describe('读取导出的字符串常量', () => {
 
 describe('发布包筛选', () => {
   test('私有包不算发布包', () => {
-    const packages = [
+    const packages: readonly PackageManifest[] = [
       {
         name: 'a',
         dir: '',
@@ -114,6 +115,7 @@ describe('发布包筛选', () => {
         private: false,
         runtimeDependencies: [],
         devDependencies: [],
+        peerDependencies: [],
       },
       {
         name: 'b',
@@ -122,6 +124,7 @@ describe('发布包筛选', () => {
         private: true,
         runtimeDependencies: [],
         devDependencies: [],
+        peerDependencies: [],
       },
     ]
     expect(publishablePackages(packages).map((item) => item.name)).toStrictEqual(['a'])

@@ -30,6 +30,7 @@ export type PackageManifest = {
   readonly private: boolean
   readonly runtimeDependencies: readonly string[]
   readonly devDependencies: readonly string[]
+  readonly peerDependencies: readonly string[]
 }
 
 /** 浏览器／DOM 全局名。`packages/*` 必须保持 Node 可测（R6）。 */
@@ -80,6 +81,7 @@ export function readWorkspacePackages(root: string): readonly PackageManifest[] 
       private: record['private'] === true,
       runtimeDependencies: dependencyNames(record['dependencies']),
       devDependencies: dependencyNames(record['devDependencies']),
+      peerDependencies: dependencyNames(record['peerDependencies']),
     })
   }
 
@@ -120,6 +122,71 @@ export function transitiveRuntimeDependencies(
   }
 
   return seen
+}
+
+/**
+ * 找出工作区依赖图里的环。
+ *
+ * 图包含 `dependencies`、`devDependencies` 与 `peerDependencies`。环的危害不在于运行时
+ * —— 它通常不报错 —— 而在于**层次**：两个包互指的时候，"哪个是测试基础设施、哪个是
+ * 被测对象"就说不清了，而本仓库的整套结构论证都建立在"谁可以依赖谁"之上。
+ *
+ * 这个检查是补上去的：`contract-assert` 与 `mock-endpoint` 曾经互指，没有任何门禁发现。
+ *
+ * @param packages - 工作区全部包的清单。
+ * @returns 每个环的可读描述，已去重并按字典序排序；无环时为空。
+ */
+export function findDependencyCycles(packages: readonly PackageManifest[]): readonly string[] {
+  const byName = new Map(packages.map((manifest) => [manifest.name, manifest]))
+
+  const edgesOf = (name: string): readonly string[] => {
+    const manifest = byName.get(name)
+    if (manifest === undefined) return []
+    return [
+      ...manifest.runtimeDependencies,
+      ...manifest.devDependencies,
+      ...manifest.peerDependencies,
+    ].filter((dependency) => byName.has(dependency))
+  }
+
+  const cycles = new Set<string>()
+  const settled = new Set<string>()
+  const stack: string[] = []
+
+  const visit = (name: string): void => {
+    const start = stack.indexOf(name)
+    if (start !== -1) {
+      cycles.add(canonicalCycle([...stack.slice(start), name]))
+      return
+    }
+    if (settled.has(name)) return
+
+    settled.add(name)
+    stack.push(name)
+    for (const next of edgesOf(name)) visit(next)
+    stack.pop()
+  }
+
+  for (const manifest of packages) visit(manifest.name)
+  return [...cycles].toSorted()
+}
+
+/**
+ * 把环旋转到从字典序最小的成员开始。
+ *
+ * 同一个环从不同入口会被发现多次，规范化之后才能只报一次。
+ *
+ * @param cycle - 形如 `[a, b, a]` 的环路径。
+ * @returns 可读的环描述。
+ */
+function canonicalCycle(cycle: readonly string[]): string {
+  const members = cycle.slice(0, -1)
+  let startIndex = 0
+  for (let index = 1; index < members.length; index += 1) {
+    if ((members[index] ?? '') < (members[startIndex] ?? '')) startIndex = index
+  }
+  const rotated = [...members.slice(startIndex), ...members.slice(0, startIndex)]
+  return [...rotated, rotated[0] ?? ''].join(' -> ')
 }
 
 /** 解析一份 TypeScript 源码。 */
@@ -522,6 +589,15 @@ export function runChecks(root: string): readonly Violation[] {
   // 门面本身零逻辑，它的风险不是写错，而是**悄悄落后** —— 某个包新增了一个导出，
   // 门面却没跟上，接入方就会在"明明契约里有"的地方拿不到东西。
   violations.push(...checkSdkSurface(packages))
+
+  // ACYCLIC：工作区依赖图不得有环。
+  for (const cycle of findDependencyCycles(packages)) {
+    violations.push({
+      rule: 'ACYCLIC',
+      target: '工作区依赖图',
+      message: `存在依赖环：${cycle}`,
+    })
+  }
 
   const textEncoder = new Set(['TextEncoder'])
   const domGlobals = new Set(DOM_GLOBALS)

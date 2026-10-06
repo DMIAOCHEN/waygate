@@ -36,10 +36,11 @@ importers:
   packages/contract: {}
 
   packages/contract-assert:
-    devDependencies:
+    dependencies:
       '@waygate/contract':
         specifier: workspace:*
         version: link:../contract
+    devDependencies:
       '@waygate/mock-endpoint':
         specifier: workspace:*
         version: link:../mock-endpoint

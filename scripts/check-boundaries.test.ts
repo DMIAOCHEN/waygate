@@ -11,6 +11,7 @@ import {
   checkSdkSurface,
   collectRuntimeExports,
   findBarrelStatements,
+  findDependencyCycles,
   findGlobalReferences,
   findRuntimeValueDeclarations,
   readWorkspacePackages,
@@ -24,6 +25,24 @@ import {
 } from './check-boundaries.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+
+/** 造一个清单，只填测试关心的字段。 */
+function manifest(
+  name: string,
+  runtimeDependencies: readonly string[] = [],
+  devDependencies: readonly string[] = [],
+  peerDependencies: readonly string[] = [],
+): PackageManifest {
+  return {
+    name,
+    dir: '',
+    version: '0.1.0',
+    private: false,
+    runtimeDependencies,
+    devDependencies,
+    peerDependencies,
+  }
+}
 
 describe('*.types.ts 只包含类型', () => {
   test('纯类型文件没有运行时值声明', () => {
@@ -153,19 +172,6 @@ describe('全局引用检测', () => {
 })
 
 describe('运行时传递依赖闭包', () => {
-  const manifest = (
-    name: string,
-    runtimeDependencies: readonly string[],
-    devDependencies: readonly string[] = [],
-  ): PackageManifest => ({
-    name,
-    dir: '',
-    version: '0.1.0',
-    private: false,
-    runtimeDependencies,
-    devDependencies,
-  })
-
   const packages = [
     manifest('a', ['b'], ['z']),
     manifest('b', ['c']),
@@ -231,6 +237,7 @@ type FixturePackage = {
   readonly private?: boolean
   readonly dependencies?: Record<string, string>
   readonly devDependencies?: Record<string, string>
+  readonly peerDependencies?: Record<string, string>
   readonly files?: Record<string, string>
   /** 造一个没有 src 目录的包，用于覆盖"该包没有源码"的分支。 */
   readonly skipSourceDir?: boolean
@@ -254,6 +261,7 @@ function createWorkspace(packages: readonly FixturePackage[]): string {
         private: pkg.private ?? false,
         dependencies: pkg.dependencies ?? {},
         devDependencies: pkg.devDependencies ?? {},
+        peerDependencies: pkg.peerDependencies ?? {},
       }),
     )
     for (const [relativePath, content] of Object.entries(pkg.files ?? {})) {
@@ -459,6 +467,17 @@ describe('合成工作区：每条规则都会被触发', () => {
 
     expect(rulesFor(workspaceRoot)).not.toContain('SDK-SURFACE')
   })
+
+  test('ACYCLIC：合成工作区里的依赖环被抓到', () => {
+    const workspaceRoot = createWorkspace([
+      { name: '@waygate/contract' },
+      { name: '@waygate/a', devDependencies: { '@waygate/b': 'workspace:*' } },
+      { name: '@waygate/b', devDependencies: { '@waygate/a': 'workspace:*' } },
+    ])
+
+    const violation = runChecks(workspaceRoot).find((item) => item.rule === 'ACYCLIC')
+    expect(violation?.message).toContain('@waygate/a -> @waygate/b -> @waygate/a')
+  })
 })
 
 describe('barrel 运行时导出收集', () => {
@@ -516,6 +535,58 @@ describe('barrel 运行时导出收集', () => {
   })
 })
 
+describe('依赖环检测', () => {
+  test('无环时为空', () => {
+    const packages = [manifest('a', ['b']), manifest('b', ['c']), manifest('c')]
+    expect(findDependencyCycles(packages)).toStrictEqual([])
+  })
+
+  test('两包互指', () => {
+    // 这就是 contract-assert 与 mock-endpoint 曾经的样子。
+    const packages = [manifest('a', [], ['b']), manifest('b', [], ['a'])]
+    expect(findDependencyCycles(packages)).toStrictEqual(['a -> b -> a'])
+  })
+
+  test('三包成环', () => {
+    const packages = [manifest('a', ['b']), manifest('b', ['c']), manifest('c', ['a'])]
+    expect(findDependencyCycles(packages)).toStrictEqual(['a -> b -> c -> a'])
+  })
+
+  test('同一个环从不同入口只报一次', () => {
+    const packages = [manifest('a', ['b']), manifest('b', ['c']), manifest('c', ['a'])]
+    expect(findDependencyCycles(packages)).toHaveLength(1)
+  })
+
+  test('环从字典序最小的成员开始报，保证输出稳定', () => {
+    const packages = [manifest('zeta', ['alpha']), manifest('alpha', ['zeta'])]
+    expect(findDependencyCycles(packages)).toStrictEqual(['alpha -> zeta -> alpha'])
+  })
+
+  test('自环也算', () => {
+    // 规范形式是"每个成员出现一次，然后回到起点"，所以自环读作 a -> a。
+    expect(findDependencyCycles([manifest('a', ['a'])])).toStrictEqual(['a -> a'])
+  })
+
+  test('devDependencies 与 peerDependencies 同样算边', () => {
+    expect(findDependencyCycles([manifest('a', [], ['b']), manifest('b', [], ['a'])])).toHaveLength(
+      1,
+    )
+    expect(
+      findDependencyCycles([manifest('a', [], [], ['b']), manifest('b', [], [], ['a'])]),
+    ).toHaveLength(1)
+  })
+
+  test('指向工作区外部的依赖不构成环', () => {
+    // 外部包不在这张图里，所以 a -> external 是条死路，不是环。
+    expect(findDependencyCycles([manifest('a', ['external-lib'])])).toStrictEqual([])
+  })
+
+  test('真实仓库无环', () => {
+    // 这条曾经会红：contract-assert 与 mock-endpoint 互指。
+    expect(findDependencyCycles(readWorkspacePackages(root))).toStrictEqual([])
+  })
+})
+
 describe('门面公开面', () => {
   test('成员清单与设计文档一致', () => {
     expect([...SDK_FACADE_MEMBERS]).toStrictEqual([
@@ -526,18 +597,7 @@ describe('门面公开面', () => {
   })
 
   test('没有 sdk 包时跳过', () => {
-    expect(
-      checkSdkSurface([
-        {
-          name: '@waygate/contract',
-          dir: '/x',
-          version: '0.1.0',
-          private: false,
-          runtimeDependencies: [],
-          devDependencies: [],
-        },
-      ]),
-    ).toStrictEqual([])
+    expect(checkSdkSurface([{ ...manifest('@waygate/contract'), dir: '/x' }])).toStrictEqual([])
   })
 })
 

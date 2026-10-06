@@ -103,7 +103,7 @@ Waygate 用**一行通配**达到同样目的：
 | 包 | 里程碑 | 发布 | 职责 |
 |---|---|---|---|
 | `contract` | 1 | ✅ npm | 核心模型、指令、事件、能力开关、版本协商、内容块 schema 与限额。**零运行时依赖** |
-| `contract-assert` | 1 | ✅ npm | 契约一致性套件，供接入方在自己的 CI 里运行（平台设计 §12.4） |
+| `contract-assert` | 1 | ✅ npm | 契约一致性套件，供接入方在自己的 CI 里运行（平台设计 §12.4）。运行时依赖 `contract`（只为类型），不依赖任何测试框架 |
 | `frame` | 1 | ✅ npm | 信封 `{channel, seq, nonce, ciphertext, tag}`、明文控制帧、编解码、路由字段 |
 | `crypto` | 1 | ✅ npm | X25519 ECDH、AES-GCM AEAD、会话密钥生命周期、`seq` 滑窗与防重放 |
 | `sdk` | 1 | ✅ npm | 接入方门面：零逻辑，只 re-export `contract` + `frame` + `crypto` |
@@ -148,8 +148,11 @@ Waygate 用**一行通配**达到同样目的：
 | **R4** | `contract` 不得依赖任何渠道相关的东西 | 平台设计 §4.3 渠道无关性不变量 | 门禁：依赖图 |
 | **R5** | 内容块度量与校验只在 `contract` 实现，且**不得使用 `TextEncoder`** | 平台设计 §5.8 的坑（微信小程序运行时没有 `TextEncoder`） | 门禁：lint 规则禁用 `TextEncoder`；渠道包不得导出度量函数 |
 | **R6** | 浏览器／DOM 代码只能出现在 `apps/web`；`packages/*` 全部保持 Node 可测 | 平台设计 §12.5"两套测试体系" | 门禁：`packages/*` 的源码不得引用 DOM 全局 |
+| **R7** | 工作区依赖图（`dependencies` + `devDependencies` + `peerDependencies`）**无环** | 环让包之间失去层次 —— "哪个是测试基础设施、哪个是被测对象"会说不清，而本仓库的整套结构论证都建立在"谁可以依赖谁"之上 | 门禁：`findDependencyCycles` |
 
 R2 与 R3 值得单独说一句：它们是**把安全承诺变成编译期事实**的地方。文档承诺"平台只见密文"很容易，但如果 `relay` 能 import `crypto`，那这个承诺就只靠"我们没这么写"维持。禁止这条依赖边之后，它是结构性的。
+
+**R7 是补上去的**，而且是被一次实际事故逼出来的：`contract-assert` 与 `mock-endpoint` 曾经互指 —— 前者 devDepends 后者（为了测"第二个实现"），后者又 type-only import 前者的被测表面类型。它不报错、测试也过，没有任何门禁发现。修法是把 `CapabilitySurface` 移进 `contract`：它描述的是"一个实现必须提供什么"，那本来就是契约的陈述；顺带接入方从**已经依赖的包**（`contract` 或门面 `sdk`）就能拿到它，不必为了给自己的实现标注类型去 import 一个对他们是 devDependency 的测试包。
 
 ---
 
@@ -366,7 +369,7 @@ pnpm gate             # 收口：typecheck + lint + format:check + check:boundar
 
 | 脚本文件 | pnpm 脚本 | 职责 |
 |---|---|---|
-| `scripts/check-boundaries.ts` | `check:boundaries` | R1–R6 依赖方向与结构不变量 |
+| `scripts/check-boundaries.ts` | `check:boundaries` | R1–R7 依赖方向与结构不变量 |
 | `scripts/check-versions.ts` | `check:versions` | 同步版本组 + `CONTRACT_VERSION` 一致 |
 | `scripts/mutation-check.ts` | `test:mutation` | 变异验证 |
 
@@ -384,7 +387,7 @@ pnpm gate             # 收口：typecheck + lint + format:check + check:boundar
 |---|---|---|---|
 | 1 | **TypeScript 7 能否替代 6.0.3** | **不能，停在 6.0.3** | 装 `typescript@7.0.2` 后 `pnpm typecheck` 立刻报 25 处 `TS2339`：`ts.createSourceFile`、`ts.forEachChild`、`ts.isExportDeclaration` 等全部不存在。查其 `package.json` 的 `exports`：包根 `.` 指向 `./lib/version.cjs`（只有版本号），经典编译器 API 只存在于 `./unstable/ast`、`./unstable/sync` 等显式子路径。三个门禁脚本都靠该 API 做 AST 分析，而替代 API 自己标着 `unstable`。**重评触发条件**：该 API 去掉 `unstable/` 前缀 |
 | 2 | **Node 22 的 WebCrypto 是否支持 X25519 + AES-GCM** | **支持，无需纯 JS 回退** | 实测 `generateKey({name:'X25519'})` + `deriveBits` 两端共享秘密一致；HKDF → AES-GCM 加解密往返成功。这直接消掉了平台设计 §11 风险一在 **Node 侧**的不确定性（小程序侧仍然存在） |
-| 3 | **三个门禁是否真的会红** | **会** | 逐个注入违规实测：`R5`／`R6`／`TYPES-ONLY` 各报一条并 exit 1；覆盖率门槛在放入一个未覆盖文件后 exit 1、移除后 exit 0；`SDK-SURFACE` 在门面去掉一个 `export *` 后逐条列出漏掉的 12 个导出；变异验证 6 个变异体全部被打红且源码逐字节还原 |
+| 3 | **三个门禁是否真的会红** | **会** | 逐个注入违规实测：`R5`／`R6`／`TYPES-ONLY` 各报一条并 exit 1；覆盖率门槛在放入一个未覆盖文件后 exit 1、移除后 exit 0；`SDK-SURFACE` 在门面去掉一个 `export *` 后逐条列出漏掉的 12 个导出；`ACYCLIC` 把依赖环装回真实仓库后 exit 1、移除后 exit 0；变异验证 6 个变异体全部被打红且源码逐字节还原 |
 | 4 | **`exactOptionalPropertyTypes` 能否真的守住"省略键"** | **能** | `pair.ack` 的 `agentPublicKey` 在缺省时**不产生该键**（`Object.hasOwn` 为假），并由用例锁定 |
 
 ### 11.2 遗留待验证项
@@ -422,7 +425,7 @@ pnpm gate             # 收口：typecheck + lint + format:check + check:boundar
   - §4.3 渠道无关性不变量 → 本文 R4 + §9.4。
   - §9.3 审计分工 → 本文 §9.3。
 - 项目归属检查：§3.3 逐条说明抄什么、不抄什么、为什么；§12 明确不沿用既有仓库的脚本名与发布流程；§6 的命令集为本项目自定义。
-- 内部一致性检查：R1–R6 与 §9 的规矩表无冲突；§8 的门面包与 §4.2 依赖图中的 `sdk` 位置一致。
+- 内部一致性检查：R1–R7 与 §9 的规矩表无冲突；§8 的门面包与 §4.2 依赖图中的 `sdk` 位置一致。
 - 歧义检查："契约"始终指平台设计的接入契约；"平台核心"始终指 `packages/*` 中非渠道的包；"门禁"始终指可执行脚本，与"评审"明确区分。
 - 诚实边界检查：§9.5 把平台设计的三处"平台做不到"提升为项目规矩，并说明了它保护的是"不要高估平台保障"。
 - **落地后修正记录**（本文在骨架完成后回头修正过，避免留下一份与代码不符的设计）：

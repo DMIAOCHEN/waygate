@@ -5,7 +5,7 @@ Waygate 是**桌面 AI 应用的远程接入平台**：中转（哑管道）+ �
 改任何代码之前先读这两份，它们是本文件所有规矩的来源：
 
 - [平台设计](docs/specs/2026-10-06-remote-access-platform-design.md) —— 架构、协议语义、安全模型、三处诚实边界。
-- [技术选型与项目结构设计](docs/specs/2026-10-06-waygate-tech-stack-and-structure-design.md) —— 工具链、包划分、R1–R6 不变量、门禁与纪律。
+- [技术选型与项目结构设计](docs/specs/2026-10-06-waygate-tech-stack-and-structure-design.md) —— 工具链、包划分、R1–R7 不变量、门禁与纪律。
 
 **当前进度：只有骨架。** 契约的完整指令集与事件集、版本协商、内容块限额、中转、渠道都还没有实现。见 §9。
 
@@ -57,13 +57,18 @@ docs/              文档，按性质分四类（见 §8）；手写，不参与
 | **R4** | `contract` 不得依赖任何渠道相关的东西 | 渠道无关性不变量（平台设计 §4.3） |
 | **R5** | 内容块度量与校验只在 `contract`，且**不得使用 `TextEncoder`** | 微信小程序运行时没有它（平台设计 §5.8） |
 | **R6** | 浏览器／DOM 代码只能出现在 `apps/web`；`packages/*` 保持 Node 可测 | 两套测试体系（平台设计 §12.5） |
+| **R7** | 工作区依赖图（`dependencies` + `devDependencies` + `peerDependencies`）**无环** | 环让包之间失去层次："哪个是测试基础设施、哪个是被测对象"会说不清 |
 
 R2 与 R3 是把安全承诺变成**结构事实**的地方：只要 `relay` 能 import `crypto`，"平台被攻破也只见密文"就只靠"我们没这么写"维持。
+
+R7 是补上去的：`contract-assert` 与 `mock-endpoint` 曾经互指（前者 devDepends 后者以测第二个实现，后者 type-only import 前者的被测表面类型），没有任何门禁发现。修法是把那个类型（`CapabilitySurface`）移进 `contract` —— 它描述的是"实现必须提供什么"，本来就是契约的陈述，接入方也因此能从已经依赖的包拿到它。**依赖方向不是越短越好，但必须能画成一张有层次的图。**
 
 另有两条让覆盖率报告保持诚实的命名约定，同样由门禁强制：
 
 - **`*.types.ts` 只允许包含类型**，不允许任何运行时值。这类文件编译后没有可执行代码，"被覆盖"对它没有意义。
 - **`index.ts` 只允许 re-export**。barrel 一旦累积逻辑就会成为人人依赖、谁都不敢改的枢纽，而它的逻辑在覆盖率里是隐形的。
+
+**谁提供什么类型的家：** 描述"实现必须提供什么"的类型属于 `contract`（例如 `CapabilitySurface`），不属于测试工具包 —— 接入方从已经依赖的包就能拿到它。这也是 R7 的由来。
 
 ## 3. 命令
 
@@ -88,7 +93,7 @@ pnpm gate             # 收口：typecheck + lint + format:check + check:boundar
 
 | 脚本 | pnpm 脚本 | 检查 |
 |---|---|---|
-| `scripts/check-boundaries.ts` | `check:boundaries` | R1–R6、两条命名约定、`sdk` 门面公开面 |
+| `scripts/check-boundaries.ts` | `check:boundaries` | R1–R7、两条命名约定、`sdk` 门面公开面 |
 | `scripts/check-versions.ts` | `check:versions` | 发布包同步版本组、`CONTRACT_VERSION` 与包版本一致 |
 | `scripts/mutation-check.ts` | `test:mutation` | 变异验证（清单在 `scripts/mutations.ts`） |
 

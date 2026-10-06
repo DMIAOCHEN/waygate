@@ -24,6 +24,8 @@ export {
 } from './capability.ts'
 export type { Capability } from './capability.ts'
 
+export type { CapabilitySurface } from './capability-surface.types.ts'
+
 export type {
   Block,
   Conversation,

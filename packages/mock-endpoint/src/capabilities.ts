@@ -7,7 +7,7 @@
  *
  * 它只实现契约的一小部分 —— 一个真实的接入方也是从一小部分开始的。
  */
-import type { CapabilitySurface } from '@waygate/contract-assert'
+import type { CapabilitySurface } from '@waygate/contract'
 
 /** 这个接入方实际实现的能力。 */
 const DECLARED_CAPABILITIES: readonly string[] = ['conversation.create', 'file.pick']

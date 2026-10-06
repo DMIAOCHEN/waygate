@@ -7,35 +7,13 @@
  *   的独立实现），否则断言只会证明"参考实现等于它自己"；
  * - **一条断言崩掉不能带走其余断言** —— 否则接入方拿到的是一个不透明的崩溃，
  *   而不是一张待修清单。
- */
-
-/**
- * 被测的契约表面。
  *
- * 目前只覆盖能力开关（§5.5）。它会随契约一起增长 —— 但**不会**因为某个渠道的
- * 需要而增长，那是渠道无关性不变量禁止的（§4.3）。
- *
- * 这是结构化类型：接入方可以直接传一个形状相同的对象，不必为了用上断言而把这个包
- * 变成运行时依赖。
+ * 被测表面的类型来自 `@waygate/contract`，不在这里定义：它描述的是"实现必须提供
+ * 什么"，那是契约的陈述。接入方从已经依赖的包就能拿到它，不必为了标注自己的实现
+ * 去 import 一个对他们是 devDependency 的测试包。这里用 `import type`，因此本包
+ * 在运行时仍然没有任何依赖。
  */
-export type CapabilitySurface = {
-  /** 接入方声明的能力集，取值不可信。 */
-  readonly declaredCapabilities: readonly string[]
-  /**
-   * 按方法名查所需的能力。
-   *
-   * @param method - 指令方法名，来自外部输入。
-   * @returns 需要的能力；该方法不是可选指令时为 `undefined`。
-   */
-  capabilityOf(method: string): string | undefined
-  /**
-   * 把声明的能力集裁剪为契约已知的部分。
-   *
-   * @param declared - 能力 id 列表，取值不可信。
-   * @returns 其中被契约认可的部分。
-   */
-  knownCapabilities(declared: readonly string[]): readonly string[]
-}
+import type { CapabilitySurface } from '@waygate/contract'
 
 /** 一条断言的结果。 */
 export type AssertionOutcome = {
