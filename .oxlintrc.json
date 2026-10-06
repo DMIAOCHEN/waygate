@@ -1,0 +1,45 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "import"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "warn"
+  },
+  "env": {
+    "builtin": true,
+    "es2024": true
+  },
+  "options": {
+    "reportUnusedDisableDirectives": "warn"
+  },
+  "ignorePatterns": ["node_modules/**", "coverage/**", "docs/**"],
+  "rules": {
+    "eqeqeq": "error",
+    "no-var": "error",
+    "no-eval": "error",
+    "no-implied-eval": "error",
+    "no-throw-literal": "error",
+    "no-console": "warn"
+  },
+  "overrides": [
+    {
+      "files": ["packages/contract/**", "packages/frame/**", "packages/crypto/**"],
+      "rules": {
+        "no-restricted-globals": [
+          "error",
+          {
+            "name": "TextEncoder",
+            "message": "内容块的度量不得依赖 TextEncoder：微信小程序运行时没有它（设计文档 §5.8 / R5）。"
+          }
+        ]
+      }
+    },
+    {
+      "files": ["**/*.test.ts"],
+      "rules": {
+        "unicorn/consistent-function-scoping": "off"
+      }
+    }
+  ]
+}

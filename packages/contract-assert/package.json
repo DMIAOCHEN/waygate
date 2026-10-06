@@ -1,0 +1,14 @@
+{
+  "name": "@waygate/contract-assert",
+  "version": "0.1.0",
+  "description": "Waygate 契约一致性套件：接入方在自己的 CI 里运行它，验证实现是否仍然符合契约。",
+  "license": "Apache-2.0",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@waygate/contract": "workspace:*",
+    "@waygate/mock-endpoint": "workspace:*"
+  }
+}

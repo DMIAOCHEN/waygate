@@ -1,0 +1,11 @@
+{
+  "name": "@waygate/mock-endpoint",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Waygate 最小 mock 接入方：契约一致性套件的第二个实现。私有包，不发布。",
+  "license": "Apache-2.0",
+  "type": "module",
+  "devDependencies": {
+    "@waygate/contract-assert": "workspace:*"
+  }
+}

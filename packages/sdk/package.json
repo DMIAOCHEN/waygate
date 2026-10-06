@@ -1,0 +1,15 @@
+{
+  "name": "@waygate/sdk",
+  "version": "0.1.0",
+  "description": "Waygate 接入方门面：零逻辑，只汇总契约、线格式与端到端加密。接入方只需这一个依赖。",
+  "license": "Apache-2.0",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@waygate/contract": "workspace:*",
+    "@waygate/crypto": "workspace:*",
+    "@waygate/frame": "workspace:*"
+  }
+}

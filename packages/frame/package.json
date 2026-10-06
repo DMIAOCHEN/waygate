@@ -1,0 +1,10 @@
+{
+  "name": "@waygate/frame",
+  "version": "0.1.0",
+  "description": "Waygate 线格式：加密信封与明文控制帧的编解码。中转只理解这一层。",
+  "license": "Apache-2.0",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  }
+}

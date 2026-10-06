@@ -1,0 +1,9 @@
+packages:
+  - packages/*
+
+# pnpm 默认拒绝任何依赖的安装脚本（strictDepBuilds）。这里默认拒绝、只放行
+# 真正需要脚本的两个：esbuild 下载原生二进制，lefthook 安装 git 钩子。
+# 新增条目必须先确认脚本内容，不允许为了"装得过"而整体放行。
+allowBuilds:
+  esbuild: true
+  lefthook: true

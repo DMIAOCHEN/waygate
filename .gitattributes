@@ -1,0 +1,13 @@
+# 行尾一律 LF。规矩要求"文件末尾恰好一个换行"，若行尾随平台漂移，
+# lefthook 的 `git diff --cached --check` 会在 Windows 上持续报假阳性。
+* text=auto eol=lf
+
+# 二进制文件不参与行尾转换。
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary

@@ -1,0 +1,16 @@
+# 见设计文档 §6：pre-commit 只管格式与文件卫生；pre-push 跑收口门禁。
+pre-commit:
+  parallel: true
+  commands:
+    format:
+      glob: '*.{ts,tsx,json,jsonc,md,yml,yaml}'
+      run: pnpm exec oxfmt --write {staged_files}
+      stage_fixed: true
+    newline:
+      # 规矩：文件末尾恰好一个换行。--check 同时报尾随空白与缺尾换行。
+      run: git diff --cached --check
+
+pre-push:
+  commands:
+    gate:
+      run: pnpm gate

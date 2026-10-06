@@ -1,0 +1,10 @@
+{
+  "name": "@waygate/contract",
+  "version": "0.1.0",
+  "description": "Waygate 接入契约：核心模型、指令、事件、能力开关与内容块限额。零运行时依赖。",
+  "license": "Apache-2.0",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  }
+}

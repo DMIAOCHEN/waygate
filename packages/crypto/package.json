@@ -1,0 +1,13 @@
+{
+  "name": "@waygate/crypto",
+  "version": "0.1.0",
+  "description": "Waygate 端到端加密：X25519 会话密钥派生、AES-GCM 封装、防重放滑窗。",
+  "license": "Apache-2.0",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@waygate/test-support": "workspace:*"
+  }
+}
